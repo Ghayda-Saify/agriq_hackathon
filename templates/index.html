@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgriQ | Smart Planner</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        /* CSS STYLES */
+        :root { --primary: #1b5e20; --secondary: #4caf50; --bg: #f1f8e9; --card-bg: #ffffff; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg); margin: 0; padding: 0; color: #333; }
+        header { background: var(--primary); color: white; padding: 15px 50px; display: flex; justify-content: space-between; align-items: center; }
+        .container { max-width: 1200px; margin: 30px auto; padding: 20px; }
+
+        /* TABS */
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { padding: 12px 25px; border: none; background: #ddd; cursor: pointer; border-radius: 8px; font-weight: bold; transition: 0.3s; }
+        .tab-btn.active { background: var(--primary); color: white; }
+        .stage-section { display: none; }
+        .stage-section.active { display: block; animation: fadeIn 0.5s; }
+
+        /* CARDS */
+        .card { background: var(--card-bg); padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
+
+        /* FORM & BUTTONS */
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        select, input { width: 90%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+        button.action-btn { background: var(--secondary); color: white; padding: 12px 30px; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; width: 100%; font-weight: bold; }
+        button.action-btn:hover { background: var(--primary); }
+
+        /* RESULTS STYLING */
+        .crop-item { display: flex; align-items: center; margin-bottom: 10px; background: #f9f9f9; padding: 10px; border-radius: 8px; }
+        .crop-name { width: 120px; font-weight: bold; }
+        .progress-container { flex-grow: 1; background: #e0e0e0; height: 10px; border-radius: 5px; overflow: hidden; margin: 0 15px; }
+        .progress-bar { height: 100%; transition: width 0.5s ease-in-out; }
+
+        .bar-green { background-color: #2e7d32; }
+        .bar-yellow { background-color: #fbc02d; }
+        .bar-red { background-color: #c62828; }
+
+        .heat-box { padding: 10px; text-align: center; border-radius: 5px; color: #333; font-weight: bold; font-size: 0.8em; border: 1px solid #ccc; }
+        .heatmap-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-top: 15px; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div style="font-size: 24px; font-weight: bold;"><i class="fas fa-seedling"></i> AgriQ</div>
+        <div>Role: <strong>Farmer Interface</strong></div>
+    </header>
+
+    <div class="container">
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('stage1', this)">1. Feasibility (AI)</button>
+            <button class="tab-btn" onclick="switchTab('stage2', this)">2. Market (LSTM)</button>
+            <button class="tab-btn" onclick="switchTab('stage3', this)">3. Quantum Plan</button>
+        </div>
+
+        <div id="stage1" class="stage-section active">
+            <div class="card">
+                <h2><i class="fas fa-microscope"></i> Stage 1: Feasibility Analysis</h2>
+                <div class="form-grid">
+                    <div>
+                        <label>Soil Type</label>
+                        <select id="soilInput">
+                            <option value="Loamy">Loamy (Balanced)</option>
+                            <option value="Clay">Clay (Heavy)</option>
+                            <option value="Sandy">Sandy (Light)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>pH Level</label>
+                        <input type="number" id="phInput" value="6.5" step="0.1">
+                    </div>
+                    <div>
+                        <label>District</label>
+                        <select id="locInput">
+                            <option value="Jenin">Jenin</option>
+                            <option value="Jericho">Jericho</option>
+                            <option value="Hebron">Hebron</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="action-btn" onclick="runStage1()">Analyze Soil Compatibility</button>
+            </div>
+
+            <div id="stage1-results" class="card" style="display:none;">
+                <h3><i class="fas fa-list"></i> Recommended Crops</h3>
+                <div id="crops-list"></div>
+            </div>
+        </div>
+
+        <div id="stage2" class="stage-section">
+            <div class="card">
+                <h2><i class="fas fa-chart-line"></i> Stage 2: Market Prediction</h2>
+                <div style="height: 300px;"><canvas id="marketChart"></canvas></div>
+            </div>
+        </div>
+
+        <div id="stage3" class="stage-section">
+            <div class="card">
+                <h2><i class="fas fa-atom"></i> Stage 3: Quantum Optimization</h2>
+                <p>Distribute crops nationally to minimize market surplus.</p>
+                <button class="action-btn" onclick="runStage3()">Run Quantum Solver</button>
+
+                <div id="stage3-results" style="display:none; margin-top: 20px;">
+                    <div style="padding: 15px; background: #e8f5e9; border-left: 5px solid green; border-radius: 5px;">
+                        <h3>✅ Your Assignment</h3>
+                        <h1 id="q-crop" style="color: green; margin: 5px 0;">--</h1>
+                        <p>Confidence Score: <span id="q-conf">--</span></p>
+                    </div>
+
+                    <h4>National Heatmap:</h4>
+                    <div class="heatmap-grid" id="heatmap-container"></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // TAB SWITCHER
+        function switchTab(tabId, btn) {
+            document.querySelectorAll('.stage-section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            btn.classList.add('active');
+            if(tabId === 'stage2') loadMarketChart();
+        }
+
+        // --- STAGE 1 FUNCTION ---
+        async function runStage1() {
+            console.log("🚀 Stage 1 Started...");
+            const data = {
+                soil: document.getElementById('soilInput').value,
+                ph: document.getElementById('phInput').value,
+                location: document.getElementById('locInput').value
+            };
+
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) throw new Error("Server Error: " + response.statusText);
+
+                const results = await response.json();
+                console.log("✅ Data Received:", results);
+
+                // Render Results
+                const list = document.getElementById('crops-list');
+                list.innerHTML = ''; // Clear old
+
+                results.forEach(crop => {
+                    let color = 'bar-red';
+                    if(crop.score > 75) color = 'bar-green';
+                    else if(crop.score > 45) color = 'bar-yellow';
+
+                    list.innerHTML += `
+                        <div class="crop-item">
+                            <div class="crop-name">${crop.name}</div>
+                            <div class="progress-container">
+                                <div class="progress-bar ${color}" style="width: ${crop.score}%"></div>
+                            </div>
+                            <div style="font-weight:bold;">${crop.score}%</div>
+                        </div>
+                    `;
+                });
+
+                document.getElementById('stage1-results').style.display = 'block';
+
+            } catch (error) {
+                console.error("❌ Error:", error);
+                alert("Failed to connect to AI. Check Console (F12).");
+            }
+        }
+
+        // --- STAGE 2 FUNCTION ---
+        let chartInstance = null;
+        async function loadMarketChart() {
+            if(chartInstance) return; // Load once
+
+            try {
+                const response = await fetch('/api/market');
+                const data = await response.json();
+
+                const ctx = document.getElementById('marketChart').getContext('2d');
+                chartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.months,
+                        datasets: [{
+                            label: 'Predicted Demand (Tons)',
+                            data: data.demand,
+                            borderColor: 'green',
+                            backgroundColor: 'rgba(0, 128, 0, 0.1)',
+                            fill: true
+                        }, {
+                            label: 'Projected Price (NIS)',
+                            data: data.prices,
+                            borderColor: 'orange',
+                            borderDash: [5, 5]
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            } catch (error) {
+                console.error("❌ Market Data Error:", error);
+            }
+        }
+
+        // --- STAGE 3 FUNCTION ---
+        async function runStage3() {
+            console.log("⚛️ Quantum Solver Started...");
+            try {
+                const response = await fetch('/api/optimize');
+                const data = await response.json();
+                console.log("✅ Quantum Data:", data);
+
+                // Update UI
+                document.getElementById('q-crop').innerText = data.farmer_assignment.crop;
+                document.getElementById('q-conf').innerText = data.farmer_assignment.confidence;
+
+                // Heatmap
+                const grid = document.getElementById('heatmap-container');
+                grid.innerHTML = '';
+                const colors = {'Wheat': '#e6ee9c', 'Olive': '#a5d6a7', 'Tomato': '#ef9a9a'};
+
+                for (const [city, crop] of Object.entries(data.heatmap)) {
+                    const color = colors[crop] || '#ddd';
+                    grid.innerHTML += `<div class="heat-box" style="background:${color}">${city}<br>${crop}</div>`;
+                }
+
+                document.getElementById('stage3-results').style.display = 'block';
+
+            } catch (error) {
+                console.error("❌ Quantum Error:", error);
+            }
+        }
+    </script>
+</body>
+</html>
