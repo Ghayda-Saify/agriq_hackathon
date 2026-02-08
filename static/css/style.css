@@ -1,0 +1,107 @@
+:root {
+    --primary: #1b5e20;
+    --secondary: #2e7d32;
+    --accent: #4caf50;
+    --bg-light: #f4f6f8;
+}
+
+body {
+    background-color: var(--bg-light);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* HERO SECTION */
+.hero-section {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+    color: white;
+    padding: 3rem 0;
+    border-bottom-left-radius: 30px;
+    border-bottom-right-radius: 30px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+
+/* CARDS */
+.card-custom {
+    border: none;
+    border-radius: 20px;
+    background: white;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+    transition: transform 0.3s ease;
+}
+.card-custom:hover {
+    transform: translateY(-5px);
+}
+
+/* TABS */
+.nav-pills .nav-link {
+    color: var(--primary);
+    font-weight: 600;
+    border-radius: 20px;
+    padding: 10px 25px;
+    margin: 0 5px;
+}
+.nav-pills .nav-link.active {
+    background-color: var(--primary);
+    color: white;
+}
+
+/* BUTTONS */
+.action-btn {
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.3s;
+}
+.action-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+/* WEATHER & CROPS */
+.weather-badge {
+    background: #e3f2fd;
+    color: #0d47a1;
+    padding: 15px;
+    border-radius: 12px;
+    border: 1px solid #90caf9;
+    margin-bottom: 20px;
+}
+
+.crop-item {
+    background: #fff;
+    border: 1px solid #eee;
+    padding: 10px 15px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+/* PROGRESS BARS */
+.progress { height: 10px; border-radius: 5px; background-color: #e0e0e0; }
+.bg-success { background-color: #2e7d32 !important; } /* High Score */
+.bg-warning { background-color: #fbc02d !important; } /* Med Score */
+.bg-danger { background-color: #c62828 !important; }  /* Low Score */
+
+/* CHART */
+.chart-container {
+    position: relative;
+    height: 350px;
+    width: 100%;
+}
+
+/* HEATMAP GRID */
+.heatmap-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr); /* 3 columns */
+    gap: 10px;
+    margin-top: 10px;
+}
+.heat-box {
+    padding: 10px;
+    text-align: center;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: bold;
+    color: #333;
+    border: 1px solid rgba(0,0,0,0.05);
+    background-color: #f5f5f5;
+}

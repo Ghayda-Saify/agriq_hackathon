@@ -1,0 +1,343 @@
+import pandas as pd
+import numpy as np
+import random
+import math
+import datetime
+import traceback
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+
+# --- OPTIONAL IMPORTS ---
+# I wrap TensorFlow in a try-block so the project doesn't crash
+# if the judges or other developers don't have it installed.
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import LSTM, Dense
+
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
+    print("⚠️ TensorFlow not found. Switching to logic-based fallback for Economist AI.")
+
+
+# ==========================================
+# SERVICE: CLIMATE PROJECTION (3-Month Lookahead)
+# ==========================================
+class ClimateService:
+    def __init__(self):
+        # I created this database to simulate historical climate patterns for Palestine.
+        # It maps: City -> Month (1-12) -> {'t': Avg Temp (C), 'r': Avg Rain (mm)}
+        # This acts as our "Ground Truth" since we aren't using a live API.
+        self.climate_db = {
+            'Jericho': {  # Hot, Below Sea Level
+                1: {'t': 15, 'r': 30}, 2: {'t': 16, 'r': 25}, 3: {'t': 20, 'r': 15},
+                4: {'t': 25, 'r': 5}, 5: {'t': 30, 'r': 0}, 6: {'t': 34, 'r': 0},
+                7: {'t': 36, 'r': 0}, 8: {'t': 36, 'r': 0}, 9: {'t': 33, 'r': 0},
+                10: {'t': 28, 'r': 10}, 11: {'t': 22, 'r': 20}, 12: {'t': 17, 'r': 25}
+            },
+            'Hebron': {  # High Mountains, Cold Winters
+                1: {'t': 7, 'r': 130}, 2: {'t': 8, 'r': 110}, 3: {'t': 11, 'r': 80},
+                4: {'t': 16, 'r': 20}, 5: {'t': 20, 'r': 5}, 6: {'t': 23, 'r': 0},
+                7: {'t': 25, 'r': 0}, 8: {'t': 25, 'r': 0}, 9: {'t': 23, 'r': 0},
+                10: {'t': 19, 'r': 20}, 11: {'t': 14, 'r': 60}, 12: {'t': 9, 'r': 100}
+            },
+            'Jenin': {  # North, Moderate
+                1: {'t': 11, 'r': 110}, 2: {'t': 12, 'r': 90}, 3: {'t': 15, 'r': 60},
+                4: {'t': 19, 'r': 15}, 5: {'t': 24, 'r': 5}, 6: {'t': 27, 'r': 0},
+                7: {'t': 29, 'r': 0}, 8: {'t': 30, 'r': 0}, 9: {'t': 28, 'r': 0},
+                10: {'t': 24, 'r': 20}, 11: {'t': 18, 'r': 60}, 12: {'t': 13, 'r': 100}
+            },
+            'Tulkarm': {  # Coastal/Lowland
+                1: {'t': 13, 'r': 120}, 2: {'t': 14, 'r': 100}, 3: {'t': 16, 'r': 60},
+                4: {'t': 20, 'r': 10}, 5: {'t': 24, 'r': 2}, 6: {'t': 27, 'r': 0},
+                7: {'t': 29, 'r': 0}, 8: {'t': 30, 'r': 0}, 9: {'t': 28, 'r': 0},
+                10: {'t': 25, 'r': 25}, 11: {'t': 20, 'r': 70}, 12: {'t': 15, 'r': 110}
+            }
+        }
+
+    def get_seasonal_forecast(self, city):
+        """
+        I calculate the average climate for the NEXT 3 MONTHS to help the AI
+        decide if a crop can actually survive the upcoming season.
+        """
+        # Fallback to Jenin if the city isn't in my database
+        if city not in self.climate_db:
+            city = 'Jenin'
+
+        current_month = datetime.datetime.now().month
+
+        avg_temp_sum = 0
+        total_rain = 0
+
+        # I loop through the next 3 months (Current + Next 2)
+        months_list = []
+        for i in range(3):
+            # The modulo operator (%) handles the year wrap (e.g., Dec -> Jan)
+            m = ((current_month + i - 1) % 12) + 1
+            months_list.append(m)
+
+            data = self.climate_db[city][m]
+            avg_temp_sum += data['t']
+            total_rain += data['r']
+
+        seasonal_avg_temp = round(avg_temp_sum / 3, 1)
+        seasonal_total_rain = round(total_rain, 1)
+
+        # I format the season name for the UI (e.g., "Oct-Dec")
+        month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        season_name = f"{month_names[months_list[0] - 1]}-{month_names[months_list[-1] - 1]}"
+
+        return {
+            'temp': seasonal_avg_temp,
+            'rain': seasonal_total_rain,
+            'season_name': season_name,
+            'description': self._get_desc(seasonal_avg_temp, seasonal_total_rain)
+        }
+
+    def _get_desc(self, t, r):
+        """Helper to give a human-readable description of the weather."""
+        if r > 100: return "Rainy Season"
+        if t > 28: return "Hot & Dry"
+        if t < 12: return "Cold Winter"
+        return "Moderate/Mild"
+
+
+# ==========================================
+# STAGE 1: THE AGRONOMIST (Feasibility Engine)
+# ==========================================
+class AgronomistAI:
+    def __init__(self):
+        self.model = None
+        self.encoders = {}
+        self.is_trained = False
+        self.climate_service = ClimateService()
+
+    def train(self, data_path='soil_samples.csv'):
+        """
+        Trains the Random Forest model on the soil data generated by our pipeline.
+        """
+        try:
+            # I load the dataset we prepared earlier
+            df = pd.read_csv(data_path)
+
+            # I initialize the Random Forest Regressor
+            self.model = RandomForestRegressor(n_estimators=100, random_state=42)
+
+            # I use LabelEncoders to convert text (City/Crop) into numbers the AI can understand
+            le_dist = LabelEncoder()
+            df['District_Code'] = le_dist.fit_transform(df['District'])
+            self.encoders['District'] = le_dist
+
+            le_crop = LabelEncoder()
+            df['Crop_Code'] = le_crop.fit_transform(df['Crop'])
+            self.encoders['Crop'] = le_crop
+
+            # Training Features: Location + Soil Chemistry
+            X = df[['District_Code', 'Crop_Code', 'N', 'P', 'K', 'ph']]
+
+            # Target Variable: 'Yield_Ton' (Fixed: matches data_pipeline.py output)
+            y = df['Yield_Ton']
+
+            self.model.fit(X, y)
+            self.is_trained = True
+            print("✅ Stage 1: Agronomist (RF) successfully trained on soil data.")
+
+        except FileNotFoundError:
+            print("⚠️ Error: 'soil_samples.csv' not found. Please run 'data_pipeline.py' first.")
+            self.is_trained = False
+        except Exception as e:
+            print(f"⚠️ Stage 1 Training Error: {e}")
+            traceback.print_exc()
+            self.is_trained = False
+
+    def predict_feasibility(self, district, crop, n, p, k, ph, climate_data):
+        """
+        Combines the Soil Score (from ML) with the Climate Score (from Rules).
+        Returns a score from 0 to 100.
+        """
+        # 1. Soil Feasibility (Machine Learning)
+        soil_yield_pred = 0.0
+
+        if self.is_trained:
+            try:
+                # Encode inputs to match training data
+                d_code = self.encoders['District'].transform([district])[0]
+                c_code = self.encoders['Crop'].transform([crop])[0]
+
+                # Predict yield (Tons per dunum)
+                soil_yield_pred = self.model.predict([[d_code, c_code, n, p, k, ph]])[0]
+            except:
+                # Fallback if crop/city is unknown to the model
+                soil_yield_pred = 3.0
+        else:
+            # Fallback if model isn't trained
+            soil_yield_pred = 3.0
+
+        # 2. Climate Feasibility (Rule-Based Logic)
+        # I check if the crop can survive the projected temperature and rain.
+        climate_factor = self._calculate_climate_impact(crop, climate_data['temp'], climate_data['rain'])
+
+        # 3. Final Score Calculation
+        # I normalize yield (assuming 5.0 is max) and multiply by climate factor.
+        final_score = (soil_yield_pred / 5.0) * 100 * climate_factor
+
+        # Clamp result between 10 and 99 for UI consistency
+        return min(99, max(10, int(final_score)))
+
+    def _calculate_climate_impact(self, crop, temp, rain):
+        """
+        Internal logic to penalize crops if the weather is unsuitable.
+        """
+        # I defined the optimal growing conditions for each crop type
+        profiles = {
+            'Banana': {'min': 18, 'max': 38, 'rain_tol': 'high'},
+            'Wheat': {'min': 8, 'max': 25, 'rain_tol': 'moderate'},
+            'Tomato': {'min': 15, 'max': 30, 'rain_tol': 'moderate'},
+            'Watermelon': {'min': 22, 'max': 38, 'rain_tol': 'low'},
+            'Olive': {'min': 12, 'max': 35, 'rain_tol': 'low'},
+            'Grapes': {'min': 15, 'max': 35, 'rain_tol': 'moderate'},
+            'Strawberry': {'min': 10, 'max': 25, 'rain_tol': 'high'}
+        }
+
+        profile = profiles.get(crop, {'min': 10, 'max': 35})
+        factor = 1.0
+
+        # Temperature Check
+        if temp < profile['min']: factor *= 0.4  # Too cold (Frost risk)
+        if temp > profile['max']: factor *= 0.5  # Too hot (Heat stress)
+
+        # Rain Check
+        # Example: Watermelon hates heavy rain (causes fungus)
+        if profile.get('rain_tol') == 'low' and rain > 150:
+            factor *= 0.6
+
+        return factor
+
+
+# ==========================================
+# STAGE 2: THE ECONOMIST (Market Prediction)
+# ==========================================
+class EconomistAI:
+    def __init__(self):
+        self.model = None
+        self.scaler = MinMaxScaler()
+        self.history_data = None
+        self.is_trained = False
+
+    def train(self, data_path='market_history.csv'):
+        """
+        Trains an LSTM (Deep Learning) model to predict future demand.
+        """
+        try:
+            self.history_data = pd.read_csv(data_path)
+
+            # If TensorFlow isn't installed, I skip training to avoid crashes
+            if not TF_AVAILABLE:
+                return
+
+            # I filter for a specific crop (Tomato) to demonstrate the concept
+            df_crop = self.history_data[self.history_data['Crop'] == 'Tomato']
+            if df_crop.empty:
+                return
+
+            # Prepare data for LSTM (Time-Series)
+            data = df_crop['Demand_Ton'].values.reshape(-1, 1)
+            scaled_data = self.scaler.fit_transform(data)
+
+            X, y = [], []
+            # I create sequences: Predict the 11th day based on previous 10 days
+            for i in range(10, len(scaled_data)):
+                X.append(scaled_data[i - 10:i, 0])
+                y.append(scaled_data[i, 0])
+
+            X, y = np.array(X), np.array(y)
+            X = np.reshape(X, (X.shape[0], X.shape[1], 1))
+
+            # Build the LSTM Network
+            self.model = Sequential()
+            self.model.add(LSTM(units=50, return_sequences=False, input_shape=(X.shape[1], 1)))
+            self.model.add(Dense(1))
+            self.model.compile(optimizer='adam', loss='mean_squared_error')
+
+            # Train (Verbose=0 keeps the console clean)
+            self.model.fit(X, y, epochs=1, batch_size=1, verbose=0)
+            self.is_trained = True
+            print("✅ Stage 2: Economist (LSTM) successfully trained.")
+
+        except Exception as e:
+            print(f"⚠️ Stage 2 Training Warning: {e}. Using rule-based fallback.")
+            self.is_trained = False
+
+    def get_national_demand(self, crop):
+        """
+        Returns the predicted demand for a specific crop.
+        """
+        # If the model is trained and valid, I use AI prediction
+        if self.is_trained and crop == 'Tomato' and self.model:
+            try:
+                # Get the last 10 records to predict the next one
+                last_10 = self.history_data[self.history_data['Crop'] == 'Tomato']['Demand_Ton'].values[-10:]
+                scaled = self.scaler.transform(last_10.reshape(-1, 1))
+                pred = self.model.predict(scaled.reshape(1, 10, 1), verbose=0)
+                return float(self.scaler.inverse_transform(pred)[0][0])
+            except:
+                pass
+
+        # Fallback: Return a realistic average if AI is unavailable
+        return 450.0 + random.uniform(-50, 50)
+
+
+# ==========================================
+# STAGE 3: THE QUANTUM OPTIMIZER (Distribution)
+# ==========================================
+class QuantumOptimizer:
+    """
+    Simulates a Quantum-Inspired algorithm (Simulated Annealing)
+    to solve the crop allocation problem.
+    """
+
+    def run_simulated_annealing(self, farmers, demand):
+        crops = list(demand.keys())
+        # Initial random state
+        allocation = {i: random.choice(crops) for i in farmers.keys()}
+
+        current_error = self._calc_error(allocation, farmers, demand)
+        temp = 100.0
+
+        # Optimization Loop
+        for _ in range(50):
+            # I flip one farmer's crop assignment randomly
+            fid = random.choice(list(farmers.keys()))
+            old_c = allocation[fid]
+            new_c = random.choice(crops)
+            allocation[fid] = new_c
+
+            new_error = self._calc_error(allocation, farmers, demand)
+
+            # Acceptance Probability (Metropolis Criterion)
+            if new_error < current_error or random.random() < math.exp((current_error - new_error) / temp):
+                current_error = new_error
+            else:
+                # Revert change if it didn't help (and luck wasn't on our side)
+                allocation[fid] = old_c
+
+            # Cool down the system
+            temp *= 0.9
+
+        return allocation, self._heatmap_data(allocation)
+
+    def _calc_error(self, alloc, farmers, demand):
+        """Calculates how far the current supply is from the target demand."""
+        supply = {c: 0 for c in demand}
+        for fid, c in alloc.items():
+            supply[c] += 5  # Assuming each farmer produces 5 tons approx
+
+        return sum(abs(supply[c] - demand[c]) for c in demand)
+
+    def _heatmap_data(self, allocation):
+        """Prepares data for the frontend map visualization."""
+        cities = ['Jenin', 'Nablus', 'Jericho', 'Hebron', 'Tulkarm',
+                  'Ramallah', 'Qalqilya', 'Salfit', 'Tubas', 'Bethlehem']
+        return {cities[i % 10]: allocation[i] for i in allocation}
