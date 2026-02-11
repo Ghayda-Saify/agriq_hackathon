@@ -55,6 +55,7 @@ AgriQ/
 │   └── market_history.csv
 │
 ├── logic/                   # Core AI Algorithms (The "Brain")
+│   ├── climate_service.py
 │   └── logic.py             # Contains AgronomistAI, EconomistAI, QuantumOptimizer
 │
 ├── static/                  # Frontend Assets
@@ -69,4 +70,5 @@ AgriQ/
 │   └── index.html
 │
 ├── app.py                   # Flask Server (The "Glue")
+├── data_pipline.py                   # Flask Server (The "Glue")
 └── README.md                # Documentation
